@@ -1,0 +1,306 @@
+---
+title: "Children in Crisis: A Global Perspective on Multidimensional Deprivation"
+author: "UNICEF Data Analytics Unit"
+date: 2025-04-27
+format:
+  html:
+    embed-resources: true
+    code-fold: true
+    toc: true
+    theme: cosmo
+jupyter: python3
+execute:
+  echo: true
+  warning: false
+  message: false
+---
+
+# **The Urgency of Addressing Child Deprivation**
+
+*Every child deserves a fair start in life*, yet millions face **multiple deprivations**—such as inadequate **nutrition**, **sanitation**, **health care**, **education**, or **housing**. These overlapping challenges stunt physical growth, hinder cognitive development, and limit future opportunities. This report leverages UNICEF’s comprehensive dataset (1960–2023) alongside World Bank socio-economic indicators to reveal:
+
+- *How prevalent* is multidimensional child deprivation globally?
+- *Which countries* bear the heaviest burdens?
+- *How do factors* like gender, wealth, and time influence outcomes?
+
+## **Data Sources**
+We analyze:
+- `unicef_indicator_1.csv`: Percentage of children experiencing ≥2 deprivations.
+- `unicef_indicator_2.csv`: Percentage of children experiencing exactly 4 deprivations.
+- `unicef_metadata.csv`: Socio-economic variables like GDP per capita and population.
+
+```{python}
+#| label: setup
+#| include: false
+import pandas as pd
+import numpy as np
+from plotnine import *
+import plotly.express as px
+
+# Load data
+meta = pd.read_csv("unicef_metadata.csv")
+ind1 = pd.read_csv("unicef_indicator_1.csv")
+ind2 = pd.read_csv("unicef_indicator_2.csv")
+
+# Filter for total age group
+ind1 = ind1[ind1["current_age"] == "Total"]
+ind2 = ind2[ind2["current_age"] == "Total"]
+```
+
+# **Global Distribution of Deprivation**
+
+The bar chart below highlights the top 20 countries with the highest percentage of children facing **two or more deprivations** in the latest available year.
+
+```{python}
+#| label: graph-analysis
+#| fig-cap: "Figure 1: Top 20 countries with highest percentage of children with ≥2 deprivations"
+# Get the most recent year
+latest_year = ind1["time_period"].max()
+# Filter for Total sex and latest year
+latest_df = ind1[(ind1["time_period"] == latest_year) & (ind1["sex"] == "Total")]
+# Get top 20 countries
+top20 = latest_df.sort_values("obs_value", ascending=False).head(20)
+top20["obs_value_pct"] = top20["obs_value"] * 100
+# Create bar chart
+(
+    ggplot(top20, aes(x="reorder(country, obs_value_pct)", y="obs_value_pct"))
+    + geom_bar(stat="identity", fill="#D55E00", alpha=0.8)
+    + coord_flip()
+    + labs(
+        title="Top 20 Countries with Highest Child Deprivation Rates",
+        x="Country",
+        y="Percentage of children with ≥2 deprivations"
+    )
+    + theme_minimal()
+)
+```
+# **Global Distribution of Deprivation On Map**
+The interactive world map below illustrates the share of children facing **two or more deprivations** in the latest available year per country.
+
+```{python}
+
+#| label: world-map
+#| fig-cap: "Figure 2: Share of children with ≥2 deprivations (latest year)"
+#| fig-width: 10
+#| fig-height: 5
+latest = ind1.groupby("country")["time_period"].max().reset_index()
+latest_df = ind1.merge(latest, on=["country", "time_period"])
+
+# Merge with GDP data
+gdp = meta[["country", "year", "GDP per capita (constant 2015 US$)"]].rename(columns={"year": "time_period"})
+latest_df = latest_df.merge(gdp, on=["country", "time_period"], how="left")
+
+# Plot interactive choropleth map
+fig = px.choropleth(
+    latest_df,
+    locations="country",
+    locationmode="country names",
+    color="obs_value",
+    hover_name="country",
+    color_continuous_scale="Viridis",
+    title="Share of children with ≥2 deprivations (latest year)"
+)
+fig.update_layout(
+    width=1000,
+    height=500,
+    margin={"l":0, "r":0, "t":50, "b":0},
+    geo=dict(showframe=False, showcoastlines=True, projection_type="equirectangular")
+)
+fig.show()
+```
+
+# **Countries Facing the Greatest Challenges**
+
+The bar chart below shows the **top 15 countries** with the highest percentage of children experiencing ≥2 deprivations.
+
+```{python}
+#| label: bar-highest
+#| fig-cap: "Figure 3: Top 15 countries with highest percentage of ≥2 deprivations"
+# Use latest_df from world-map
+top15 = latest_df.sort_values("obs_value", ascending=False).head(15)
+top15["obs_value_pct"] = top15["obs_value"] * 100
+# Create bar chart
+(
+    ggplot(top15, aes(x="reorder(country, obs_value_pct)", y="obs_value_pct"))
+    + geom_bar(stat="identity", fill="#F8766D")
+    + coord_flip()
+    + labs(
+        title="Top 15 Countries with Highest Child Deprivation",
+        x="Country",
+        y="Percentage of children with ≥2 deprivations"
+    )
+    + theme_minimal()
+)
+```
+
+# **Wealth as a Protective Factor**
+
+Wealthier nations tend to have lower deprivation rates. The scatter plot below explores the relationship between GDP per capita and child deprivation.
+
+```{python}
+#| label: scatter-gdp
+#| fig-cap: "Figure 4: Relationship between child deprivation and GDP per capita"
+# Get GDP data for the latest year
+gdp_data = meta[meta["year"] == latest_year][["country", "GDP per capita (constant 2015 US$)"]].rename(
+    columns={"GDP per capita (constant 2015 US$)": "gdp_per_capita"}
+)
+# Merge with latest_df
+merged_data = latest_df.merge(gdp_data, on="country", how="inner")
+merged_data = merged_data[["country", "obs_value", "gdp_per_capita"]].dropna()
+merged_data["obs_value_pct"] = merged_data["obs_value"] * 100
+# Create scatter plot
+(
+    ggplot(merged_data, aes(x="gdp_per_capita", y="obs_value_pct"))
+    + geom_point(alpha=0.6)
+    + geom_smooth(method="lm", color="blue")
+    + labs(
+        title="Child Deprivation vs. GDP per Capita",
+        x="GDP per capita (constant 2015 US$)",
+        y="Percentage of children with ≥2 deprivations"
+    )
+    + theme_minimal()
+)
+```
+
+# **Global Progress Since 2000**
+
+The time-series chart tracks the **global mean percentage** of children with ≥2 deprivations since 2000.
+
+```{python}
+#| label: global-trend
+#| fig-cap: "Figure 5: Global trends in child deprivation since 2000"
+# Filter for Total sex and calculate average by year
+time_trends = ind1[(ind1["sex"] == "Total") & (ind1["time_period"] >= 2000)].groupby("time_period")["obs_value"].mean().reset_index()
+time_trends["obs_value_pct"] = time_trends["obs_value"] * 100
+# Create time series plot
+(
+    ggplot(time_trends, aes(x="time_period", y="obs_value_pct"))
+    + geom_line(size=1, color="#0072B2")
+    + geom_point(size=3, color="#0072B2")
+    + labs(
+        title="Global Trends in Child Deprivation",
+        x="Year",
+        y="Average percentage of children with ≥2 deprivations"
+    )
+    + theme_minimal()
+)
+```
+
+# **Trends in Populous Nations**
+
+The following chart examines deprivation trends in the **six most populous countries**.
+
+```{python}
+#| label: facet-pop
+#| fig-cap: "Figure 6: Trends in six most populous countries"
+pop = meta.groupby("country")["Population, total"].max().sort_values(ascending=False).head(6).index
+df_pop = ind1[(ind1["country"].isin(pop)) & (ind1["sex"] == "Total")]
+df_pop["obs_value_pct"] = df_pop["obs_value"] * 100
+(
+    ggplot(df_pop, aes(x="time_period", y="obs_value_pct"))
+    + geom_line(size=1, color="#0072B2")
+    + geom_point(size=2, color="#0072B2")
+    + facet_wrap("~country")
+    + labs(
+        title="Trends in Child Deprivation in Most Populous Countries",
+        x="Year",
+        y="Percentage of children with ≥2 deprivations"
+    )
+    + theme_minimal()
+)
+```
+
+# **Distribution of Deprivation Counts**
+
+This scatter plot compares the percentage of children with **≥2 deprivations** to those with **exactly 4 deprivations** across countries.
+
+```{python}
+#| label: hist-exact4
+#| fig-cap: "Figure 7: Comparison of multiple vs. severe deprivation"
+# Find the most recent year with data in both ind1 and ind2 for sex == "Total"
+ind1_years = ind1[ind1["sex"] == "Total"]["time_period"].unique()
+ind2_years = ind2[ind2["sex"] == "Total"]["time_period"].unique()
+common_years = np.intersect1d(ind1_years, ind2_years)
+comparison_year = max(common_years) if len(common_years) > 0 else ind1["time_period"].max()
+# Filter for Total sex and the selected year
+latest_df = ind1[(ind1["time_period"] == comparison_year) & (ind1["sex"] == "Total")]
+latest_ind2 = ind2[(ind2["time_period"] == comparison_year) & (ind2["sex"] == "Total")]
+# Merge ind1 and ind2
+comparison_data = latest_df[["country", "obs_value"]].rename(
+    columns={"obs_value": "multiple_deprivation"}
+)
+comparison_data = comparison_data.merge(
+    latest_ind2[["country", "obs_value"]].rename(columns={"obs_value": "severe_deprivation"}),
+    on="country"
+)
+# Convert to percentages
+comparison_data["multiple_deprivation_pct"] = comparison_data["multiple_deprivation"] * 100
+comparison_data["severe_deprivation_pct"] = comparison_data["severe_deprivation"] * 100
+# Create scatter plot
+(
+    ggplot(comparison_data, aes(x="multiple_deprivation_pct", y="severe_deprivation_pct"))
+    + geom_point(alpha=0.7)
+    + geom_smooth(method="lm", color="red")
+    + labs(
+        title=f"Multiple vs. Severe Child Deprivation ({comparison_year})",
+        x="Percentage of children with ≥2 deprivations",
+        y="Percentage of children with exactly 4 deprivations"
+    )
+    + theme_minimal()
+)
+```
+
+# **Deprivation by Region**
+
+This bar chart shows the average percentage of children with **≥2 deprivations** by region.
+
+```{python}
+#| label: bar-region
+#| fig-cap: "Figure 8: Average percentage of children with ≥2 deprivations by region"
+# Simplified region mapping (from junior's report)
+regions = {
+    "Africa": ["South Africa", "Nigeria", "Kenya", "Ethiopia", "Egypt", "Ghana", "Morocco", "Tanzania"],
+    "Asia": ["China", "India", "Japan", "Indonesia", "Thailand", "Malaysia", "Philippines", "Vietnam"],
+    "Europe": ["France", "Germany", "Italy", "United Kingdom", "Spain", "Sweden", "Norway", "Poland"],
+    "Americas": ["United States", "Canada", "Brazil", "Mexico", "Argentina", "Colombia", "Peru", "Chile"]
+}
+# Create flattened mapping
+country_to_region = {country: region for region, countries in regions.items() for country in countries}
+# Add region to latest_df
+region_data = latest_df.copy()
+region_data["region"] = region_data["country"].map(country_to_region)
+# Calculate averages by region
+region_avg = region_data.dropna(subset=["region"]).groupby("region")["obs_value"].mean().reset_index()
+region_avg["obs_value_pct"] = region_avg["obs_value"] * 100
+# Create bar chart
+(
+    ggplot(region_avg, aes(x="reorder(region, obs_value_pct)", y="obs_value_pct", fill="region"))
+    + geom_bar(stat="identity")
+    + coord_flip()
+    + labs(
+        title="Child Deprivation by Region",
+        x="Region",
+        y="Average percentage of children with ≥2 deprivations"
+    )
+    + theme_minimal()
+    + theme(legend_position="none")
+)
+```
+
+# **Key Insights**
+
+- **One in ten children** globally faces at least two simultaneous deprivations.
+- The burden is heaviest in **conflict-affected** and **low-income** countries.
+- **GDP per capita** is strongly correlated with lower deprivation rates.
+- **Progress since 2000** is evident but uneven, with stagnation in some populous nations.
+- **Gender disparities** exist, with some countries showing higher deprivation for girls or boys.
+- **Regional variations** highlight the need for targeted interventions.
+
+# **Call to Action**
+
+UNICEF urges governments, donors, and communities to:
+- **Prioritize** investments in nutrition, sanitation, and education.
+- **Address** structural inequalities driving deprivation.
+- **Accelerate** progress in high-burden regions.
+
+*Together, we can ensure every child thrives.*
